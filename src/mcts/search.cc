@@ -1357,8 +1357,7 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
     // of the game), it means that we already visited this node before.
     if (picked_node.IsExtendable()) {
       // Node was never visited, extend it.
-      ExtendNode2(node, picked_node.depth, picked_node.moves_to_visit,
-                  &history);
+      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
       if (!node->IsTerminal()) {
         picked_node.nn_queried = true;
         const auto hash = history.HashLast(params_.GetCacheHistoryLength() + 1);
@@ -1816,9 +1815,9 @@ void SearchWorker::PickNodesToExtendTask(Node* node, int base_depth,
   }
 }
 
-void SearchWorker::ExtendNode2(Node* node, int depth,
-                               const std::vector<Move>& moves_to_node,
-                               PositionHistory* history) {
+void SearchWorker::ExtendNode(Node* node, int depth,
+                              const std::vector<Move>& moves_to_node,
+                              PositionHistory* history) {
   // Initialize position sequence with pre-move position.
   history->Trim(search_->played_history_.GetLength());
   for (int i = 0; i < moves_to_node.size(); i++) {
@@ -1977,45 +1976,14 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
       }
       return NodeToProcess::Collision(node, depth, collision_limit);
     }
-    // If terminal, we either found a twofold draw to be reverted, or
-    // reached the end of this playout.
+
+    // Probably best place to check for two-fold draws consistently.
+    // Depth starts with 1 at root, so real depth is depth - 1.
+    EnsureNodeTwoFoldCorrectForDepth(node, depth - 1);
+
+    // If terminal, we reached the end of this playout.
     if (node->IsTerminal()) {
-      // Probably best place to check for two-fold draws consistently.
-      // Depth starts with 1 at root, so real depth is depth - 1.
-      // Check whether first repetition was before root. If yes, remove
-      // terminal status of node and revert all visits in the tree.
-      // Length of repetition was stored in m_. This code will only do
-      // something when tree is reused and twofold visits need to be reverted.
-      if (node->IsTwoFoldTerminal() && depth - 1 < node->GetM()) {
-        int depth_counter = 0;
-        // Cache node's values as we reset them in the process. We could
-        // manually set wl and d, but if we want to reuse this for reverting
-        // other terminal nodes this is the way to go.
-        const auto wl = node->GetWL();
-        const auto d = node->GetD();
-        const auto m = node->GetM();
-        const auto terminal_visits = node->GetN();
-        for (Node* node_to_revert = node; node_to_revert != nullptr;
-             node_to_revert = node_to_revert->GetParent()) {
-          // Revert all visits on twofold draw when making it non terminal.
-          node_to_revert->RevertTerminalVisits(wl, d, m + (float)depth_counter,
-                                               terminal_visits);
-          depth_counter++;
-          // Even if original tree still exists, we don't want to revert more
-          // than until new root.
-          if (depth_counter > depth - 1) break;
-          // If wl != 0, we would have to switch signs at each depth.
-        }
-        // Mark the prior twofold draw as non terminal to extend it again.
-        node->MakeNotTerminal();
-        // When reverting the visits, we also need to revert the initial
-        // visits, as we reused fewer nodes than anticipated.
-        search_->initial_visits_ -= terminal_visits;
-        // Max depth doesn't change when reverting the visits, and cum_depth_
-        // only counts the average depth of new nodes, not reused ones.
-      } else {
-        return NodeToProcess::Visit(node, depth);
-      }
+      return NodeToProcess::Visit(node, depth);
     }
     // If unexamined leaf node -- the end of this playout.
     if (!node->HasChildren()) {
@@ -2112,8 +2080,6 @@ SearchWorker::NodeToProcess SearchWorker::PickNodeToExtend(
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth) {
-  // Initialize position sequence with pre-move position.
-  history_.Trim(search_->played_history_.GetLength());
   std::vector<Move> to_add;
   // Could instead reserve one more than the difference between history_.size()
   // and history_.capacity().
@@ -2129,98 +2095,9 @@ void SearchWorker::ExtendNode(Node* node, int depth) {
       cur = prev;
     }
   }
-  for (int i = to_add.size() - 1; i >= 0; i--) {
-    history_.Append(to_add[i]);
-  }
+  std::reverse(to_add.begin(), to_add.end());
 
-  // We don't need the mutex because other threads will see that N=0 and
-  // N-in-flight=1 and will not touch this node.
-  const auto& board = history_.Last().GetBoard();
-  auto legal_moves = board.GenerateLegalMoves();
-
-  // Check whether it's a draw/lose by position. Importantly, we must check
-  // these before doing the by-rule checks below.
-  if (legal_moves.empty()) {
-    // Could be a checkmate or a stalemate
-    if (board.IsUnderCheck()) {
-      node->MakeTerminal(GameResult::WHITE_WON);
-    } else {
-      node->MakeTerminal(GameResult::DRAW);
-    }
-    return;
-  }
-
-  // We can shortcircuit these draws-by-rule only if they aren't root;
-  // if they are root, then thinking about them is the point.
-  if (node != search_->root_node_) {
-    if (!board.HasMatingMaterial()) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    if (history_.Last().GetRule50Ply() >= 100) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    }
-
-    const auto repetitions = history_.Last().GetRepetitions();
-    // Mark two-fold repetitions as draws according to settings.
-    // Depth starts with 1 at root, so number of plies in PV is depth - 1.
-    if (repetitions >= 2) {
-      node->MakeTerminal(GameResult::DRAW);
-      return;
-    } else if (repetitions == 1 && depth - 1 >= 4 &&
-               params_.GetTwoFoldDraws() &&
-               depth - 1 >= history_.Last().GetPliesSincePrevRepetition()) {
-      const auto cycle_length = history_.Last().GetPliesSincePrevRepetition();
-      // use plies since first repetition as moves left; exact if forced draw.
-      node->MakeTerminal(GameResult::DRAW, (float)cycle_length,
-                         Node::Terminal::TwoFold);
-      return;
-    }
-
-    // Neither by-position or by-rule termination, but maybe it's a TB position.
-    // Disable TB position lookup if playing from dtz as it just reduces
-    // liklihood of good play.
-    if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
-        board.castlings().no_legal_castle() &&
-        history_.Last().GetRule50Ply() == 0 &&
-        (board.ours() | board.theirs()).count() <=
-            search_->syzygy_tb_->max_cardinality()) {
-      ProbeState state;
-      const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history_.Last(), &state);
-      // Only fail state means the WDL is wrong, probe_wdl may produce correct
-      // result with a stat other than OK.
-      if (state != FAIL) {
-        // TB nodes don't have NN evaluation, assign M from parent node.
-        float m = 0.0f;
-        // Need a lock to access parent, in case MakeSolid is in progress.
-        {
-          SharedMutex::SharedLock lock(search_->nodes_mutex_);
-          auto parent = node->GetParent();
-          if (parent) {
-            m = std::max(0.0f, parent->GetM() - 1.0f);
-          }
-        }
-        // If the colors seem backwards, check the checkmate check above.
-        if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m,
-                             Node::Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m,
-                             Node::Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Node::Terminal::Tablebase);
-        }
-        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
-      }
-    }
-  }
-
-  // Add legal moves as edges of this node.
-  node->CreateEdges(legal_moves);
+  ExtendNode(node, depth, to_add, &history_);
 }
 
 // Returns whether node was already in cache.
