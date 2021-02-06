@@ -706,9 +706,11 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
+	  const auto aq = 1+a.GetQ(0.0f, draw_score);
+	  const auto bq = 1+b.GetQ(0.0f, draw_score);
           // Prefer largest playouts then eval then prior.
-          const auto av = a.GetN() * (1+a.GetQ(0.0f, draw_score));
-          const auto bv = b.GetN() * (1+b.GetQ(0.0f, draw_score));
+          const auto av = a.GetN() * aq*aq;
+          const auto bv = b.GetN() * bq*bq;
           if (av != bv) return av > bv;
           return a.GetP() > b.GetP();
         }
