@@ -466,6 +466,7 @@ if get_option('build_backends')
     if cuda_cc != ''
       nvcc_extra_args = ['-arch=compute_' + cuda_cc, '-code=sm_' + cuda_cc]
     endif
+    nvcc_extra_args += ['-allow-unsupported-compiler']
     foreach x : get_option('cudnn_include')
       cuda_arguments += ['-I', x]
     endforeach
