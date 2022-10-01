@@ -700,8 +700,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         if (a_rank == kNonTerminal) {
           const auto aq = 1 + a.GetQ(0.0f, draw_score);
           const auto bq = 1 + b.GetQ(0.0f, draw_score);
-          const auto av = std::pow(a.GetN(), 0.01) * aq;
-          const auto bv = std::pow(b.GetN(), 0.01) * bq;
+          const auto av = a.GetN() * std:.pow(aq/2, 20);
+          const auto bv = b.GetN() * std::pow(bq/2, 20);
           return av > bv;
         }
 
