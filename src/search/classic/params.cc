@@ -585,7 +585,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->HideOption(kCpuctFactorAtRootId);
   options->HideOption(kFpuStrategyAtRootId);
   options->HideOption(kFpuValueAtRootId);
-  options->HideOption(kTemperatureId);
+//  options->HideOption(kTemperatureId);
   options->HideOption(kTempDecayMovesId);
   options->HideOption(kTempDecayDelayMovesId);
   options->HideOption(kTemperatureCutoffMoveId);
