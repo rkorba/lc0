@@ -163,6 +163,7 @@ class SearchParams {
     return kMaxCollisionVisitsScalingPower;
   }
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
+  int64_t GetFixedNodes() const { return kFixedNodes; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -234,6 +235,7 @@ class SearchParams {
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
+  static const OptionId kFixedNodesId;
 
  private:
   const OptionsDict& options_;
@@ -292,6 +294,7 @@ class SearchParams {
   const int kMaxCollisionVisitsScalingEnd;
   const float kMaxCollisionVisitsScalingPower;
   const bool kSearchSpinBackoff;
+  const int kFixedNodes;
 };
 
 }  // namespace classic

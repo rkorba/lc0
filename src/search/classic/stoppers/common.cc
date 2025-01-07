@@ -28,6 +28,7 @@
 #include "search/classic/stoppers/common.h"
 
 #include "neural/shared_params.h"
+#include "search/classic/params.h"
 
 namespace lczero {
 namespace classic {
@@ -125,12 +126,13 @@ void PopulateCommonUciStoppers(ChainedSearchStopper* stopper,
 
   // "go nodes" stopper.
   int64_t node_limit = 0;
-  if (params.nodes) {
+  int64_t fixedNodes = options.Get<int>(lczero::classic::SearchParams::kFixedNodesId);
+  if (params.nodes || fixedNodes) {
     if (options.Get<bool>(kNodesAsPlayoutsId)) {
       stopper->AddStopper(std::make_unique<PlayoutsStopper>(
           *params.nodes, options.Get<float>(kSmartPruningFactorId) > 0.0f));
     } else {
-      node_limit = *params.nodes;
+      node_limit = fixedNodes ? fixedNodes : *params.nodes;
     }
   }
   // always limit nodes to avoid exceeding the limit 4000000000. That number is
