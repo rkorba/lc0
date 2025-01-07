@@ -188,6 +188,7 @@ common_files += [
 files += [
   'src/engine_classic.cc',
   'src/engine_loop.cc',
+  'src/engine.cc',
   'src/neural/backends/network_check.cc',
   'src/neural/backends/network_demux.cc',
   'src/neural/backends/network_mux.cc',
@@ -198,6 +199,7 @@ files += [
   'src/neural/cache.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
+  'src/neural/memcache.cc',
   'src/neural/network_legacy.cc',
   'src/neural/onnx/adapters.cc',
   'src/neural/onnx/builder.cc',

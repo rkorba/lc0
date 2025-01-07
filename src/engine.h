@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2024 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,23 +27,35 @@
 
 #pragma once
 
-#include "search/classic/stoppers/stoppers.h"
-#include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
+#include <vector>
+
+#include "engine_loop.h"
+#include "search/search.h"
 
 namespace lczero {
-namespace classic {
 
-enum class RunType { kUci, kSimpleUci, kSelfplay };
-void PopulateCommonStopperOptions(RunType for_what, OptionsParser* options);
+class Engine : public EngineControllerBase {
+ public:
+  Engine(std::unique_ptr<SearchEnvironment>, const OptionsDict&);
+  ~Engine() override;
 
-// Populates KLDGain and SmartPruning stoppers.
-void PopulateIntrinsicStoppers(ChainedSearchStopper* stopper,
-                               const OptionsDict& options);
+ private:
+  void EnsureReady() override {};
+  void NewGame() override;
+  void SetPosition(const std::string& fen,
+                   const std::vector<std::string>& moves) override;
+  void Go(const GoParams& params) override;
+  void PonderHit() override {}
+  void Stop() override;
 
-std::unique_ptr<TimeManager> MakeCommonTimeManager(
-    std::unique_ptr<TimeManager> child_manager, const OptionsDict& options,
-    int64_t move_overhead);
+ private:
+  void EnsureBackendCreated();
+  void EnsureSearchStopped();
 
-}  // namespace classic
+  const OptionsDict& options_;
+  std::unique_ptr<SearchEnvironment> search_env_;
+  std::unique_ptr<SearchBase> search_;
+  std::unique_ptr<Backend> backend_;
+};
+
 }  // namespace lczero

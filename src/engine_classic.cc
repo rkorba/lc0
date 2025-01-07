@@ -87,10 +87,10 @@ MoveList StringsToMovelist(const std::vector<std::string>& moves,
 
 }  // namespace
 
-EngineClassic::EngineClassic(std::unique_ptr<UciResponder> uci_responder,
+EngineClassic::EngineClassic(UciResponder& uci_responder,
                              const OptionsDict& options)
     : options_(options),
-      uci_responder_(std::move(uci_responder)),
+      uci_responder_(&uci_responder),
       current_position_{ChessBoard::kStartposFen, {}} {}
 
 void EngineClassic::PopulateOptions(OptionsParser* options) {
@@ -98,7 +98,6 @@ void EngineClassic::PopulateOptions(OptionsParser* options) {
   const bool is_simple =
       CommandLine::BinaryName().find("simple") != std::string::npos;
   options->Add<IntOption>(kThreadsOptionId, 0, 128) = 0;
-  options->Add<IntOption>(classic::kNNCacheSizeId, 0, 999999999) = 2000000;
   classic::SearchParams::Populate(options);
 
   ConfigFile::PopulateOptions(options);
@@ -161,7 +160,7 @@ void EngineClassic::UpdateFromUciOptions() {
   }
 
   // Cache size.
-  cache_.SetCapacity(options_.Get<int>(classic::kNNCacheSizeId));
+  cache_.SetCapacity(options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
 
   // Check whether we can update the move timer in "Go".
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
@@ -345,7 +344,7 @@ void EngineClassic::Go(const GoParams& params) {
   go_params_ = params;
 
   std::unique_ptr<UciResponder> responder =
-      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_.get());
+      std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
 
   // Setting up current position, now that it's known whether it's ponder or
   // not.
