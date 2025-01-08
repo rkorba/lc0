@@ -104,13 +104,10 @@ class Search {
   void EnsureBestMoveKnown();
 
   // Returns a child with most visits, with or without temperature.
-  // NoTemperature is safe to use on non-extended nodes, while WithTemperature
-  // accepts only nodes with at least 1 visited child.
-  EdgeAndNode GetBestChildNoTemperature(Node* parent, int depth) const;
-  std::vector<EdgeAndNode> GetBestChildrenNoTemperature(Node* parent, int count,
-                                                        int depth) const;
-  EdgeAndNode GetBestRootChildWithTemperature(float temperature) const;
-
+  // NoTemperature is safe to use on non-extended nodes.
+  EdgeAndNode GetBestChild(Node* parent, int depth, float temperature) const;
+  std::vector<EdgeAndNode> GetBestChildren(Node* parent, int count,
+                                                        int depth, float temperature) const;
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeSinceFirstBatch() const;
   void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);

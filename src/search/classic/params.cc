@@ -580,7 +580,7 @@ void SearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
 
-  options->HideOption(kNoiseEpsilonId);
+//  options->HideOption(kNoiseEpsilonId);
   options->HideOption(kNoiseAlphaId);
   options->HideOption(kLogLiveStatsId);
   options->HideOption(kDisplayCacheUsageId);
