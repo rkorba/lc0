@@ -464,6 +464,8 @@ class SearchWorker {
   // Returns how many tasks there were.
   int WaitForTasks();
 
+  void adjustVD(float &v, float &d);
+
   Search* const search_;
   // List of nodes to process.
   std::vector<NodeToProcess> minibatch_;

@@ -229,8 +229,10 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
   }
+
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
+
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
   // extreme.
   const float eps = 0.0001f;
@@ -742,7 +744,7 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  std::vector<std::pair<EdgeAndNode, float>> edges;
+  std::vector<std::pair<EdgeAndNode, double>> edges;
   for (auto& edge : parent->Edges()) {
     if (parent == root_node_ && !root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
@@ -750,13 +752,18 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
       continue;
     }
 
-    float v = edge.GetP();
+    double v = edge.GetP();
     if(edge.GetN() > 0) {
       v = 0.5 + edge.GetQ(0.0f, draw_score) / 2;
-      const bool flip = v < 0.5;
+/*      const bool flip = v < 0.5;
       if(flip) v = 1-v;
       v = std::pow(v, 1.0 + Random::Get().GetFloat(temperature));
       if(flip) v = 1-v;
+
+      v *= std::sqrt(edge.GetN()) * (1.0 + Random::Get().GetFloat(2*temperature));*/
+
+      v *= std::sqrt(edge.GetN());
+
       v += 1;
     }
     
@@ -833,7 +840,7 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
   }
 
   std::vector<EdgeAndNode> ret;
-  for(const std::pair<EdgeAndNode, float>& p : edges)
+  for(const std::pair<EdgeAndNode, float> p : edges)
     ret.push_back(p.first);
   return ret;
 }
@@ -2148,6 +2155,30 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
+void SearchWorker::adjustVD(float &v, float &d) {
+
+  const float temp = params_.GetTemperature();
+
+  if(temp < 0.001) return;
+
+  float rand = 1 + Random::Get().GetFloat(temp);
+
+  if(Random::Get().GetFloat(2) > 1) rand = 1 / rand;
+
+  d = std::pow(d, rand);
+
+  auto w = std::max(0.0f, std::min((1 + v - d) / 2, 1.0f));
+
+  rand = 1 + Random::Get().GetFloat(temp);
+  if(Random::Get().GetFloat(2) > 1) rand = 1 / rand;
+
+  w = std::pow(w, rand);
+
+  auto l = std::max(0.0f, std::min(1.0f, 1-d-w));
+
+  v = w - l;
+}
+
 template <typename Computation>
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
                                          const Computation& computation,
@@ -2166,6 +2197,9 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
   // First the value...
   auto v = -computation.GetQVal(idx_in_computation);
   auto d = computation.GetDVal(idx_in_computation);
+
+  adjustVD(v, d);
+
   if (params_.GetWDLRescaleRatio() != 1.0f ||
       (params_.GetWDLRescaleDiff() != 0.0f &&
        search_->contempt_mode_ != ContemptMode::NONE)) {
@@ -2212,7 +2246,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process,
     edge.edge()->SetP(intermediate[counter++] * scale);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
+  if (params_.GetNoiseEpsilon() /*&& node == search_->root_node_*/) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
   }
