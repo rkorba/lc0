@@ -2158,8 +2158,8 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     return;
   }
   node_to_process->eval->q = -node_to_process->eval->q;
+  adjustVD(node_to_process->eval->q, node_to_process->eval->d);
 
-  adjustVD(&node_to_process->eval->q, &node_to_process->eval->d);
   // For NN results, we need to populate policy as well as value.
   // First the value...
   if (params_.GetWDLRescaleRatio() != 1.0f ||
