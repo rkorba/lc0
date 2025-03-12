@@ -115,7 +115,6 @@ class SearchParams {
   float GetMovesLeftQuadraticFactor() const {
     return kMovesLeftQuadraticFactor;
   }
-  bool GetDisplayCacheUsage() const { return kDisplayCacheUsage; }
   int GetMaxConcurrentSearchers() const { return kMaxConcurrentSearchers; }
   float GetDrawScore() const { return kDrawScore; }
   ContemptMode GetContemptMode() const {
@@ -206,7 +205,6 @@ class SearchParams {
   static const OptionId kMovesLeftScaledFactorId;
   static const OptionId kMovesLeftQuadraticFactorId;
   static const OptionId kMovesLeftSlopeId;
-  static const OptionId kDisplayCacheUsageId;
   static const OptionId kMaxConcurrentSearchersId;
   static const OptionId kDrawScoreId;
   static const OptionId kContemptModeId;
@@ -273,7 +271,6 @@ class SearchParams {
   const float kMovesLeftConstantFactor;
   const float kMovesLeftScaledFactor;
   const float kMovesLeftQuadraticFactor;
-  const bool kDisplayCacheUsage;
   const int kMaxConcurrentSearchers;
   const float kDrawScore;
   const float kContempt;
