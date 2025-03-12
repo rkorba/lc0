@@ -2121,7 +2121,6 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-<<<<<<< HEAD
 void SearchWorker::adjustVD(float &v, float &d) {
 
   const float temp = params_.GetTemperature();
