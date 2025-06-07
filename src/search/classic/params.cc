@@ -525,7 +525,7 @@ const OptionId BaseSearchParams::kUCIRatingAdvId{
 const OptionId BaseSearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
-const OptionId SearchParams::kFixedNodesId{
+const OptionId BaseSearchParams::kFixedNodesId{
     "fixed-nodes", "FixedNodes",
     "Set fixed amount of nodes to search."};
 
