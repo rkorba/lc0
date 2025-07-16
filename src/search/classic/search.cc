@@ -722,7 +722,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
 // Returns @count children with most visits.
 std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
                                                               int count,
-                                                              int depth, float temperature) const {
+                                                              int depth) const {
   // Even if Edges is populated at this point, its a race condition to access
   // the node, so exit quickly.
   if (parent->GetN() == 0) return {};
@@ -764,7 +764,7 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [draw_score, temperature](const auto& pa, const auto& pb) {
+      [](const auto& pa, const auto& pb) {
         // The function returns "true" when a is preferred to b.
 
         const auto& a = pa.first;
