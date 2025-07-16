@@ -100,9 +100,9 @@ class Search {
 
   // Returns a child with most visits, with or without temperature.
   // NoTemperature is safe to use on non-extended nodes.
-  EdgeAndNode GetBestChild(Node* parent, int depth, float temperature) const;
+  EdgeAndNode GetBestChild(Node* parent, int depth) const;
   std::vector<EdgeAndNode> GetBestChildren(Node* parent, int count,
-                                                        int depth, float temperature) const;
+                                                        int depth) const;
   int64_t GetTimeSinceStart() const;
   int64_t GetTimeSinceFirstBatch() const;
   void MaybeTriggerStop(const IterationStats& stats, StoppersHints* hints);

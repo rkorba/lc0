@@ -261,7 +261,7 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
-  const auto edges = GetBestChildren(root_node_, max_pv, 0, 0);
+  const auto edges = GetBestChildren(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
   const auto draw_score = GetDrawScore(false);
@@ -365,7 +365,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     bool flip = played_history_.IsBlackToMove();
     int depth = 0;
     for (auto iter = edge; iter;
-         iter = GetBestChild(iter.node(), depth, 0), flip = !flip) {
+         iter = GetBestChild(iter.node(), depth), flip = !flip) {
       uci_info.pv.push_back(iter.GetMove(flip));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
       depth += 1;
@@ -653,7 +653,7 @@ Eval Search::GetBestEval(Move* move, bool* is_terminal) const {
   float parent_d = root_node_->GetD();
   float parent_m = root_node_->GetM();
   if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
-  EdgeAndNode best_edge = GetBestChild(root_node_, 0, 0);
+  EdgeAndNode best_edge = GetBestChild(root_node_, 0);
   if (move) *move = best_edge.GetMove(played_history_.IsBlackToMove());
   if (is_terminal) *is_terminal = best_edge.IsTerminal();
   return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
@@ -710,11 +710,11 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  auto bestmove_edge = GetBestChild(root_node_, 0, temperature);
+  auto bestmove_edge = GetBestChild(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
   if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
-    final_pondermove_ = GetBestChild(bestmove_edge.node(), 1, 0)
+    final_pondermove_ = GetBestChild(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
 }
@@ -836,8 +836,8 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChild(Node* parent, int depth, float temperature) const {
-  auto res = GetBestChildren(parent, 1, depth, temperature);
+EdgeAndNode Search::GetBestChild(Node* parent, int depth) const {
+  auto res = GetBestChildren(parent, 1, depth);
   return res.empty() ? EdgeAndNode() : res.front();
 }
 
@@ -2217,7 +2217,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
         // If we make the root solid, the current_best_edge_ becomes invalid and
         // we should repopulate it.
         search_->current_best_edge_ =
-            search_->GetBestChild(search_->root_node_, 0, 0);
+            search_->GetBestChild(search_->root_node_, 0);
       }
     }
 
@@ -2250,7 +2250,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
          (n != search_->current_best_edge_.node() &&
           search_->current_best_edge_.GetN() <= n->GetN()))) {
       search_->current_best_edge_ =
-          search_->GetBestChild(search_->root_node_, 0, 0);
+          search_->GetBestChild(search_->root_node_, 0);
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
