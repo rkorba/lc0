@@ -176,6 +176,8 @@ Search::Search(const NodeTree& tree, Backend* backend,
   // enough to prevent expired entries later during the search.
   absl::erase_if(*tt_, [](const auto& item) { return item.second.expired(); });
 
+  LOGFILE << "Transposition table garbage collection done.";
+
   if (params_.GetMaxConcurrentSearchers() != 0) {
     pending_searchers_.store(params_.GetMaxConcurrentSearchers(),
                              std::memory_order_release);
@@ -1063,6 +1065,7 @@ void Search::Wait() {
     threads_.back().join();
     threads_.pop_back();
   }
+  LOGFILE << "Search threads cleaned.";
 }
 
 void Search::CancelSharedCollisions() REQUIRES(nodes_mutex_) {
@@ -1110,7 +1113,7 @@ void SearchWorker::RunTasks(int tid) {
             // We got the spin lock, double check we're still in the clear.
             if (nta < tc) {
               id = tasks_taken_.fetch_add(1, std::memory_order_acq_rel);
-              task = &picking_tasks_[id];
+              task = picking_tasks_.data() + id;
               task_taking_started_.store(0, std::memory_order_release);
               break;
             }
@@ -1157,7 +1160,7 @@ void SearchWorker::RunTasks(int tid) {
           break;
         }
       }
-      picking_tasks_[id].complete = true;
+      picking_tasks_.data()[id].complete = true;
       completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
     }
   }
@@ -1575,9 +1578,6 @@ void SearchWorker::PickNodesToExtendTask(
     const BackupPath& path, int collision_limit, PositionHistory& history,
     std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
-  // TODO: Find a safe way to make helper threads work in parallel without
-  // excessive locking.
-  Mutex::Lock lock(picking_tasks_mutex_);
   assert(path.size() == (size_t)history.GetLength() -
                             search_->played_history_.GetLength() + 1);
 
@@ -1860,9 +1860,8 @@ void SearchWorker::PickNodesToExtendTask(
           if (!ShouldStopPickingHere(child_node, false, child_repetitions)) {
             bool passed = false;
             {
-              // TODO: Reinstate this lock when the whole function lock is gone.
               // Multiple writers, so need mutex here.
-              // Mutex::Lock lock(picking_tasks_mutex_);
+              Mutex::Lock lock(picking_tasks_mutex_);
               // Ensure not to exceed size of reservation.
               if (picking_tasks_.size() < MAX_TASKS) {
                 picking_tasks_.emplace_back(full_path, history, child_limit);
@@ -2191,7 +2190,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // For the first visit to a terminal, maybe update parent bounds too.
   auto update_parent_bounds =
       params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
-  auto nl = n->GetLowNode();
+  const auto& nl = n->GetLowNode();
   float v = 0.0f;
   float d = 0.0f;
   float m = 0.0f;
@@ -2245,7 +2244,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
     // Nothing left to do without ancestors to update.
     if (++it == path.crend()) break;
     auto [p, pr, pm] = *it;
-    auto pl = p->GetLowNode();
+    const auto& pl = p->GetLowNode();
 
     assert(!p->IsTerminal() ||
            (p->IsTerminal() && pl->IsTerminal() && p->GetWL() == -pl->GetWL() &&
@@ -2347,7 +2346,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
   //        Win ( 1, 1) -> (-1,-1) Loss
 
   // Nothing left to do for ancestors if the parent would be a regular node.
-  auto pl = p->GetLowNode();
+  const auto& pl = p->GetLowNode();
   if (lower == GameResult::BLACK_WON && upper == GameResult::WHITE_WON) {
     return false;
   } else if (lower == upper) {

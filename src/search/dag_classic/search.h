@@ -233,7 +233,11 @@ class SearchWorker {
     }
     for (int i = 0; i < task_workers_; i++) {
       task_workspaces_.emplace_back();
-      task_threads_.emplace_back([this, i]() { this->RunTasks(i); });
+      task_threads_.emplace_back([this, i]() {
+          LOGFILE << "Task worker " << i << " starting.";
+          this->RunTasks(i);
+          LOGFILE << "Task worker " << i << " exiting.";
+        });
     }
     target_minibatch_size_ = params_.GetMiniBatchSize();
     if (target_minibatch_size_ == 0) {
@@ -255,6 +259,7 @@ class SearchWorker {
     for (size_t i = 0; i < task_threads_.size(); i++) {
       task_threads_[i].join();
     }
+    LOGFILE << "Search worker destroyed.";
   }
 
   // Runs iterations while needed.
@@ -361,7 +366,7 @@ class SearchWorker {
       for (auto it = path.cbegin(); it != path.cend(); ++it) {
         if (it != path.cbegin()) oss << "->";
         auto n = std::get<0>(*it);
-        auto nl = n->GetLowNode();
+        const auto& nl = n->GetLowNode();
         oss << n << ":" << n->GetNInFlight();
         if (nl) {
           oss << "(" << nl << ")";
