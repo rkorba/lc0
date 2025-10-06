@@ -160,6 +160,10 @@ class BaseSearchParams {
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
   int64_t GetFixedNodes() const { return kFixedNodes; }
 
+  float GetGarbageCollectionDelay() const {
+    return kGarbageCollectionDelay;
+  }
+
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
   static const OptionId kCpuctId;
@@ -228,6 +232,7 @@ class BaseSearchParams {
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
   static const OptionId kFixedNodesId;
+  static const OptionId kGarbageCollectionDelayId;
 
  protected:
   const OptionsDict& options_;
@@ -287,6 +292,7 @@ class BaseSearchParams {
   const float kMaxCollisionVisitsScalingPower;
   const bool kSearchSpinBackoff;
   const int kFixedNodes;
+  const float kGarbageCollectionDelay;
 };
 
 class SearchParams : public BaseSearchParams {
