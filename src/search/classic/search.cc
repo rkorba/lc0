@@ -2108,30 +2108,6 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
-void SearchWorker::adjustVD(float &v, float &d) {
-
-  const float temp = params_.GetTemperature();
-
-  if(temp < 0.001) return;
-
-  float rand = 1 + Random::Get().GetFloat(temp);
-
-  if(Random::Get().GetFloat(2) > 1) rand = 1 / rand;
-
-  d = std::pow(d, rand);
-
-  auto w = std::max(0.0f, std::min((1 + v - d) / 2, 1.0f));
-
-  rand = 1 + Random::Get().GetFloat(temp);
-  if(Random::Get().GetFloat(2) > 1) rand = 1 / rand;
-
-  w = std::pow(w, rand);
-
-  auto l = std::max(0.0f, std::min(1.0f, 1-d-w));
-
-  v = w - l;
-}
-
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
@@ -2144,7 +2120,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     return;
   }
   node_to_process->eval->q = -node_to_process->eval->q;
-  adjustVD(node_to_process->eval->q, node_to_process->eval->d);
 
   // For NN results, we need to populate policy as well as value.
   // First the value...
@@ -2166,7 +2141,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     edge.edge()->SetP(node_to_process->eval->p[p_idx++]);
   }
   // Add Dirichlet noise if enabled and at root.
-  if (params_.GetNoiseEpsilon() /*&& node == search_->root_node_*/) {
+  if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
   }
