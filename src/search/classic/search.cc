@@ -712,7 +712,7 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  auto bestmove_edge = temperature
+  auto bestmove_edge = temperature && root_node_->GetN() > 1
                            ? GetBestRootChildWithTemperature(temperature)
                            : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
@@ -837,7 +837,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 
   std::vector<float> cumulative_sums;
   float sum = 0.0;
-  float max_n = 0.0;
+  float max_v = 0.0;
   const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
   const float fpu =
@@ -849,8 +849,10 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetN() + offset > max_n) {
-      max_n = edge.GetN() + offset;
+    const auto q = 0.5 + edge.GetQ(fpu, draw_score) / 2;
+    const auto v = edge.GetN()*q*q + offset;
+    if (v > max_v) {
+      max_v = v;
       max_eval = edge.GetQ(fpu, draw_score);
     }
   }
@@ -865,12 +867,11 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       continue;
     }
     if (edge.GetQ(fpu, draw_score) < min_eval) continue;
-    sum += std::pow(
-        std::max(0.0f,
-                 (max_n <= 0.0f
-                      ? edge.GetP()
-                      : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
-        1 / temperature);
+
+    const auto q = 0.5 + edge.GetQ(fpu, draw_score) / 2;
+    const auto v = edge.GetN()*q*q + offset;
+
+    sum += std::pow(v / max_v, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
   assert(sum);
