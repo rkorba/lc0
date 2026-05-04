@@ -228,10 +228,8 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
   }
-
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
-
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
   // extreme.
   const float eps = 0.0001f;
@@ -262,7 +260,7 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
 
 void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
   const auto max_pv = params_.GetMultiPv();
-  const auto edges = GetBestChildren(root_node_, max_pv, 0);
+  const auto edges = GetBestChildrenNoTemperature(root_node_, max_pv, 0);
   const auto score_type = params_.GetScoreType();
   const auto per_pv_counters = params_.GetPerPvCounters();
   const auto draw_score = GetDrawScore(false);
@@ -367,7 +365,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     bool flip = played_history_.IsBlackToMove();
     int depth = 0;
     for (auto iter = edge; iter;
-         iter = GetBestChild(iter.node(), depth), flip = !flip) {
+         iter = GetBestChildNoTemperature(iter.node(), depth), flip = !flip) {
       uci_info.pv.push_back(iter.GetMove(flip));
       if (!iter.node()) break;  // Last edge was dangling, cannot continue.
       depth += 1;
@@ -423,7 +421,7 @@ int64_t Search::GetTimeSinceFirstBatch() const REQUIRES(counters_mutex_) {
 
 // Root is depth 0, i.e. even depth.
 float Search::GetDrawScore(bool is_odd_depth) const {
-  return (is_odd_depth //== played_history_.IsBlackToMove()
+  return (is_odd_depth /*== played_history_.IsBlackToMove()*/
               ? -params_.GetDrawScore()
               : params_.GetDrawScore());
 }
@@ -657,7 +655,7 @@ Eval Search::GetBestEval(Move* move, bool* is_terminal) const {
   float parent_d = root_node_->GetD();
   float parent_m = root_node_->GetM();
   if (!root_node_->HasChildren()) return {parent_wl, parent_d, parent_m};
-  EdgeAndNode best_edge = GetBestChild(root_node_, 0);
+  EdgeAndNode best_edge = GetBestChildNoTemperature(root_node_, 0);
   if (move) *move = best_edge.GetMove(played_history_.IsBlackToMove());
   if (is_terminal) *is_terminal = best_edge.IsTerminal();
   return {best_edge.GetWL(parent_wl), best_edge.GetD(parent_d),
@@ -714,17 +712,19 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
     }
   }
 
-  auto bestmove_edge = GetBestChild(root_node_, 0);
+  auto bestmove_edge = temperature
+                           ? GetBestRootChildWithTemperature(temperature)
+                           : GetBestChildNoTemperature(root_node_, 0);
   final_bestmove_ = bestmove_edge.GetMove(played_history_.IsBlackToMove());
 
   if (bestmove_edge.GetN() > 0 && bestmove_edge.node()->HasChildren()) {
-    final_pondermove_ = GetBestChild(bestmove_edge.node(), 1)
+    final_pondermove_ = GetBestChildNoTemperature(bestmove_edge.node(), 1)
                             .GetMove(!played_history_.IsBlackToMove());
   }
 }
 
 // Returns @count children with most visits.
-std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
+std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
                                                               int count,
                                                               int depth) const {
   // Even if Edges is populated at this point, its a race condition to access
@@ -738,41 +738,22 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
   // * If two nodes have equal number:
   //   * If that number is 0, the one with larger prior wins.
   //   * If that number is larger than 0, the one with larger eval wins.
-  std::vector<std::pair<EdgeAndNode, double>> edges;
+  std::vector<EdgeAndNode> edges;
   for (auto& edge : parent->Edges()) {
     if (parent == root_node_ && !root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-
-    double v = edge.GetP();
-    if(edge.GetN() > 0) {
-      v = 0.5 + edge.GetQ(0.0f, draw_score) / 2;
-/*      const bool flip = v < 0.5;
-      if(flip) v = 1-v;
-      v = std::pow(v, 1.0 + Random::Get().GetFloat(temperature));
-      if(flip) v = 1-v;
-
-      v *= std::sqrt(edge.GetN()) * (1.0 + Random::Get().GetFloat(2*temperature));*/
-
-      v *= std::sqrt(edge.GetN());
-
-      v += 1;
-    }
-    
-    edges.push_back({edge, v});
+    edges.push_back(edge);
   }
   const auto middle = (static_cast<int>(edges.size()) > count)
                           ? edges.begin() + count
                           : edges.end();
   std::partial_sort(
       edges.begin(), middle, edges.end(),
-      [](const auto& pa, const auto& pb) {
+      [draw_score](const auto& a, const auto& b) {
         // The function returns "true" when a is preferred to b.
-
-        const auto& a = pa.first;
-	const auto& b = pb.first;
 
         // Lists edge types from less desirable to more desirable.
         enum EdgeRank {
@@ -816,7 +797,15 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
 
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
-	  return pa.second > pb.second;
+          // Prefer largest playouts then eval then prior.
+          if (a.GetN() == 0 || b.GetN() == 0) return (a.GetN() == 0 && b.GetN() == 0) ? (a.GetP() > b.GetP()) : (a.GetN() > b.GetN());
+
+	  const auto aq = 0.5 + a.GetQ(0.0f, draw_score) / 2;
+	  const auto bq = 0.5 + b.GetQ(0.0f, draw_score) / 2;
+	  const auto av = aq*aq*a.GetN();
+	  const auto bv = bq*bq*b.GetN();
+
+	  return av != bv ? (av > bv) : (a.GetP() > b.GetP());
         }
 
         // Both variants are winning, prefer shortest win.
@@ -828,21 +817,80 @@ std::vector<EdgeAndNode> Search::GetBestChildren(Node* parent,
         return a.GetM(0.0f) > b.GetM(0.0f);
       });
 
-
   if (count < static_cast<int>(edges.size())) {
     edges.resize(count);
   }
-
-  std::vector<EdgeAndNode> ret;
-  for(const std::pair<EdgeAndNode, float> p : edges)
-    ret.push_back(p.first);
-  return ret;
+  return edges;
 }
 
 // Returns a child with most visits.
-EdgeAndNode Search::GetBestChild(Node* parent, int depth) const {
-  auto res = GetBestChildren(parent, 1, depth);
+EdgeAndNode Search::GetBestChildNoTemperature(Node* parent, int depth) const {
+  auto res = GetBestChildrenNoTemperature(parent, 1, depth);
   return res.empty() ? EdgeAndNode() : res.front();
+}
+
+// Returns a child of a root chosen according to weighted-by-temperature visit
+// count.
+EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
+  // Root is at even depth.
+  const float draw_score = GetDrawScore(/* is_odd_depth= */ false);
+
+  std::vector<float> cumulative_sums;
+  float sum = 0.0;
+  float max_n = 0.0;
+  const float offset = params_.GetTemperatureVisitOffset();
+  float max_eval = -1.0f;
+  const float fpu =
+      GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
+
+  for (auto& edge : root_node_->Edges()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
+      continue;
+    }
+    if (edge.GetN() + offset > max_n) {
+      max_n = edge.GetN() + offset;
+      max_eval = edge.GetQ(fpu, draw_score);
+    }
+  }
+
+  // TODO(crem) Simplify this code when samplers.h is merged.
+  const float min_eval =
+      max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
+  for (auto& edge : root_node_->Edges()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
+      continue;
+    }
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    sum += std::pow(
+        std::max(0.0f,
+                 (max_n <= 0.0f
+                      ? edge.GetP()
+                      : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
+        1 / temperature);
+    cumulative_sums.push_back(sum);
+  }
+  assert(sum);
+
+  const float toss = Random::Get().GetFloat(cumulative_sums.back());
+  int idx =
+      std::lower_bound(cumulative_sums.begin(), cumulative_sums.end(), toss) -
+      cumulative_sums.begin();
+
+  for (auto& edge : root_node_->Edges()) {
+    if (!root_move_filter_.empty() &&
+        std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                  edge.GetMove()) == root_move_filter_.end()) {
+      continue;
+    }
+    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    if (idx-- == 0) return edge;
+  }
+  assert(false);
+  return {};
 }
 
 void Search::StartThreads(size_t how_many) {
@@ -2120,7 +2168,6 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
     return;
   }
   node_to_process->eval->q = -node_to_process->eval->q;
-
   // For NN results, we need to populate policy as well as value.
   // First the value...
   if (params_.GetWDLRescaleRatio() != 1.0f ||
@@ -2208,7 +2255,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
         // If we make the root solid, the current_best_edge_ becomes invalid and
         // we should repopulate it.
         search_->current_best_edge_ =
-            search_->GetBestChild(search_->root_node_, 0);
+            search_->GetBestChildNoTemperature(search_->root_node_, 0);
       }
     }
 
@@ -2241,7 +2288,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
          (n != search_->current_best_edge_.node() &&
           search_->current_best_edge_.GetN() <= n->GetN()))) {
       search_->current_best_edge_ =
-          search_->GetBestChild(search_->root_node_, 0);
+          search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
