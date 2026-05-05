@@ -802,8 +802,8 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
 
 	  const auto aq = 0.5 + a.GetQ(0.0f, draw_score) / 2;
 	  const auto bq = 0.5 + b.GetQ(0.0f, draw_score) / 2;
-	  const auto av = aq*aq*a.GetN();
-	  const auto bv = bq*bq*b.GetN();
+	  const auto av = aq*aq * a.GetN();
+	  const auto bv = bq*bq * b.GetN();
 
 	  return av != bv ? (av > bv) : (a.GetP() > b.GetP());
         }
@@ -838,8 +838,8 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   std::vector<float> cumulative_sums;
   float sum = 0.0;
   float max_v = 0.0;
-  const float offset = params_.GetTemperatureVisitOffset();
-  float max_eval = -1.0f;
+  float max_q = 0;
+  float max_n = 1;
   const float fpu =
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
 
@@ -850,31 +850,29 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
       continue;
     }
     const auto q = 0.5 + edge.GetQ(fpu, draw_score) / 2;
-    const auto v = edge.GetN()*q*q + offset;
+    const auto v = edge.GetN()*q*q;
     if (v > max_v) {
       max_v = v;
-      max_eval = edge.GetQ(fpu, draw_score);
+      max_n = edge.GetN();
+      max_q = q;
     }
   }
 
+  const auto offset = std::max(0.0, max_q - 0.5);
+
   // TODO(crem) Simplify this code when samplers.h is merged.
-  const float min_eval =
-      max_eval - params_.GetTemperatureWinpctCutoff() / 50.0f;
   for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
         std::find(root_move_filter_.begin(), root_move_filter_.end(),
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
-
     const auto q = 0.5 + edge.GetQ(fpu, draw_score) / 2;
-    const auto v = edge.GetN()*q*q + offset;
-
-    sum += std::pow(v / max_v, 1 / temperature);
+    const auto x = std::max(0.0, q - offset);
+    
+    sum += std::pow(edge.GetN()*x*x / max_n, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
-  assert(sum);
 
   const float toss = Random::Get().GetFloat(cumulative_sums.back());
   int idx =
@@ -887,7 +885,6 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
     if (idx-- == 0) return edge;
   }
   assert(false);
