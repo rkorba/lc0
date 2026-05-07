@@ -860,6 +860,9 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 
   const auto offset = std::max(0.0, max_q - 0.5);
 
+  // adjust max_v for less rounding error propagation in next step
+  max_v = max_n * (max_q - offset) * (max_q - offset);
+
   // TODO(crem) Simplify this code when samplers.h is merged.
   for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
@@ -870,7 +873,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     const auto q = 0.5 + edge.GetQ(fpu, draw_score) / 2;
     const auto x = std::max(0.0, q - offset);
     
-    sum += std::pow(edge.GetN()*x*x / max_n, 1 / temperature);
+    sum += std::pow(edge.GetN()*x*x / max_v, 1 / temperature);
     cumulative_sums.push_back(sum);
   }
 
