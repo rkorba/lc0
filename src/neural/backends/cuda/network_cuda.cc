@@ -241,7 +241,7 @@ class CudaNetwork : public Network {
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
     cudaDeviceProp deviceProp = {};
-    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id_));
     showDeviceInfo(deviceProp, gpu_id_);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
@@ -324,15 +324,15 @@ class CudaNetwork : public Network {
                                                 cudaEventDisableTiming));
       ReportCUBLASErrors(cublasCreate(&cublas_));
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
-#if !defined(USE_HIP)
-      // The CUBLAS_TENSOR_OP_MATH / CUBLAS_PEDANTIC_MATH enums (a NVIDIA
-      // TF32/tensor-op math-mode toggle and a TU11x workaround) have no hipBLAS
-      // equivalent; let hipBLAS pick its default precision.
+#if !defined(USE_HIP) && CUDART_VERSION < 11010
+      // CUBLAS_TENSOR_OP_MATH was deprecated in CUDA 11.0 while using
+      // CUBLAS_PEDANTIC_MATH was a workaround for a TU11x bug (apparently
+      // fixed in CUDA 11.1) and hipBLAS has no equivalent.
       if (has_tensor_cores_)
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_TENSOR_OP_MATH));  // Deprecated on CUDA 11.0 and later
-      else if (fp16 || is_bf16)
+      else if (fp16)
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_PEDANTIC_MATH));  // Explicitly set PEDANTIC_MATH mode to
@@ -388,8 +388,9 @@ class CudaNetwork : public Network {
     // ROCm; HIP always takes the cuBLAS attention fallback, so keep this false.
     if (deviceProp.major >= 8 && (fp16 || is_bf16)) {
       use_fused_mha = options.GetOrDefault<bool>(
-          "fused_mha", file.format().network_format().ffn_activation() !=
-                           pblczero::NetworkFormat::ACTIVATION_RELU_2);
+          "fused_mha",
+          is_bf16 || file.format().network_format().ffn_activation() !=
+                      pblczero::NetworkFormat::ACTIVATION_RELU_2);
     }
 #endif
 
@@ -1136,15 +1137,10 @@ class CudaNetwork : public Network {
   std::unique_ptr<InputsOutputs<DataType>> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
-#if LC0_CUDA_BF16_SUPPORTED
-      constexpr bool is_16bit = std::is_same<half, DataType>::value ||
-                                std::is_same<__nv_bfloat16, DataType>::value;
-#else
-      constexpr bool is_16bit = std::is_same<half, DataType>::value;
-#endif
+      constexpr bool is_fp16 = std::is_same<half, DataType>::value;
       return std::make_unique<InputsOutputs<DataType>>(
           max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
-          !has_tensor_cores_ && is_16bit);
+          !has_tensor_cores_ && is_fp16);
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1250,7 +1246,7 @@ class CudaNetwork : public Network {
              << major << "." << minor << "." << pl;
       }
     }
-    cudaDriverGetVersion(&version);
+    ReportCUDAErrors(cudaDriverGetVersion(&version));
     major = version / 1000;
     minor = (version - major * 1000) / 10;
     pl = version - major * 1000 - minor * 10;
@@ -1423,8 +1419,7 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
-  // No error checking here, this will be repeated later.
-  cudaGetDeviceProperties(&deviceProp, gpu_id);
+  ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id));
 
   // Check if the GPU supports FP16.
   if (deviceProp.major >= 7 ||
@@ -1441,7 +1436,7 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
-  cudaGetDeviceProperties(&deviceProp, gpu_id);
+  ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id));
 
   // Check if the GPU supports bfloat16 (Compute Capability >= 8.0).
 #if !defined(USE_HIP)
