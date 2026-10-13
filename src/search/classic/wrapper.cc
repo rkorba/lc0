@@ -135,6 +135,14 @@ void ClassicSearch::StartSearch(const GoParams& params) {
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       *options_, syzygy_tb_);
 
+  if(options_->Get<int>(lczero::classic::SearchParams::kFixedNodesId)) {
+     const auto t = tree_->HeadPosition().IsBlackToMove() ? params.btime : params.wtime;
+     const auto i = tree_->HeadPosition().IsBlackToMove() ? params.binc : params.winc;
+     if(t || i) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long>(0.9*(t.value_or(0)/40+i.value_or(0)))));
+     }
+  }
+
   LOGFILE << "Timer started at "
           << FormatTime(SteadyClockToSystemClock(*move_start_time_));
   search_->StartThreads(options_->Get<int>(kThreadsOptionId));
